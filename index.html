@@ -56,6 +56,10 @@ kbd{font-family:var(--mono);font-size:11px;border:1px solid #3a3a44;border-radiu
 /* video */
 .vwrap{position:relative;aspect-ratio:16/9;max-width:100%;max-height:52vh;margin-inline:auto;background:#000;border-radius:8px;overflow:hidden;border:1px dashed var(--line)}
 .vwrap video{width:100%;height:100%;display:block;background:#000}
+#ytHost,#ytHost iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.filmcredit{margin:8px 0 0}
+.filmcredit a{color:var(--fg)}
+.linkish{color:var(--fg);text-decoration:underline;cursor:pointer;margin-left:4px}
 .drop{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:16px;color:var(--muted)}
 .drop strong{color:var(--fg);font-family:var(--display);font-size:22px;letter-spacing:.05em;text-transform:uppercase}
 .drop.over{background:rgba(227,52,58,.12)}
@@ -229,9 +233,10 @@ details.settings summary{cursor:pointer;color:var(--muted);font-weight:600}
       </div>
     </div>
     <div class="vwrap" id="vwrap">
+      <div id="ytHost" hidden><div id="yt"></div></div>
       <video id="video" playsinline preload="metadata" hidden></video>
       <div class="drop" id="drop">
-        <strong>Drop a game recording here</strong>
+        <strong id="dropTitle">Loading the game film…</strong>
         <span>MP4 or MOV from your computer. It stays on this device.</span>
         <label class="btn primary" for="vfile">Choose video file</label>
         <span class="small">No file handy? Play the game on another screen and switch timing to Real time.</span>
@@ -243,6 +248,7 @@ details.settings summary{cursor:pointer;color:var(--muted);font-weight:600}
       <label class="small"><input type="radio" name="src" value="real" id="src-real" checked> Real time</label>
       <span class="small" id="vtime">Film 0:00.0</span>
     </div>
+    <p class="small filmcredit" id="filmCredit" hidden>Game film: <a href="https://www.youtube.com/watch?v=QRmJ6cASkw8" target="_blank" rel="noopener">2026 IGHSAU Class 1A final, Newell-Fonda vs. Bishop Garrigan</a>, from Iowa PBS. Iowa plays with a 35-second shot clock. <button class="btn ghost" id="tipBtn" hidden>Jump to tip-off</button> <label class="linkish" for="vfile">Use my own video instead</label></p>
     <p class="small" style="margin:6px 0 0">Rewinding the film erases your clicks after that point, so a trainee can redo a stretch. The board resets to where it should be at that moment.</p>
     <div class="banner" id="reviewBanner" hidden><span>Review mode: scrub the film freely. Your run is saved and nothing you click is recorded.</span><button class="btn" id="resume">Resume training</button></div>
   </section>
@@ -466,7 +472,30 @@ let st=fresh();
 let log=[];          // {v, c, t?, n?, gc, sc, auto?, partner?}
 let role='main';
 let src='real';
-let sessionStart=performance.now(), lastReal=performance.now(), lastVid=0;
+let sessionStart=performance.now(), lastReal=performance.now(), lastFilm=0;
+// ----- film player: built-in YouTube game, or a local file -----
+const YT_ID='QRmJ6cASkw8';   // Iowa PBS: 2026 IGHSAU Class 1A final
+const TIPOFF=771;            // 12:51 into the video: opening tip
+let pmode='none', ytp=null, ytOK=false, ytSmooth={t:0,at:0};
+function ytState(){ try{return ytp.getPlayerState();}catch(e){return -1;} }
+function ytTime(){
+  let real=0; try{real=ytp.getCurrentTime()||0;}catch(e){return 0;}
+  const now=performance.now();
+  if(ytState()!==1){ ytSmooth={t:real,at:now}; return real; }
+  let rate=1; try{rate=ytp.getPlaybackRate()||1;}catch(e){}
+  const est=ytSmooth.t+(now-ytSmooth.at)/1000*rate;
+  if(Math.abs(real-est)>0.4){ ytSmooth={t:real,at:now}; return real; }
+  return est;
+}
+const P={
+  has(){ return pmode!=='none'; },
+  time(){ return pmode==='file'?video.currentTime:pmode==='yt'?ytTime():0; },
+  paused(){ return pmode==='file'?video.paused:pmode==='yt'?ytState()!==1:true; },
+  play(){ if(pmode==='file')video.play(); else if(pmode==='yt')ytp.playVideo(); },
+  pause(){ if(pmode==='file')video.pause(); else if(pmode==='yt')ytp.pauseVideo(); },
+  seek(t){ t=Math.max(0,t); if(pmode==='file')video.currentTime=t; else if(pmode==='yt'){ytp.seekTo(t,true); ytSmooth={t,at:performance.now()};} },
+  rate(r){ if(pmode==='file')video.playbackRate=r; else if(pmode==='yt'){try{ytp.setPlaybackRate(r);}catch(e){}} }
+};
 let key=null, keyPartner=[], partnerT=0;
 let ranges=[];
 let reviewing=false;
@@ -481,7 +510,7 @@ const GROUP={GC_START:'Time on / off',GC_STOP:'Time on / off',SCORE:'Scoring',FO
 const matchKey=e=>e.c+(e.t||'')+(e.c==='SCORE'?e.n:'');
 
 // ---------------- time helpers ----------------
-function filmTime(){ return src==='video'&&video.src ? video.currentTime : (performance.now()-sessionStart)/1000; }
+function filmTime(){ return src==='video'&&P.has() ? P.time() : (performance.now()-sessionStart)/1000; }
 function fmtFilm(s){ s=Math.max(0,s); const m=Math.floor(s/60); return m+':'+(s%60).toFixed(1).padStart(4,'0'); }
 function fmtGame(ms){
   ms=Math.max(0,ms);
@@ -569,7 +598,7 @@ function rebuild(t){
 // ---------------- tick ----------------
 function tick(){
   const now=performance.now(); let d=0;
-  if(src==='video'&&video.src){ const v=video.currentTime*1000; d=v-lastVid; lastVid=v; if(d<0||d>1500)d=0; }
+  if(src==='video'&&P.has()){ const c=P.time(), j=c-lastFilm; if(j<-0.3||j>1.5){ handleSeek(c); d=0; } else { d=Math.max(0,j*1000); lastFilm=c; } }
   else { d=now-lastReal; if(d>1000)d=0; }
   lastReal=now;
   const cur=filmTime();
@@ -610,9 +639,10 @@ function render(){
   $('arrL').classList.toggle('on',st.poss==='h');$('arrR').classList.toggle('on',st.poss==='g');
   $('vtime').textContent='Film '+fmtFilm(filmTime());
   const pill=$('srcpill');
-  pill.classList.toggle('live',src==='real'||(!!video.src&&!video.paused));
-  pill.classList.toggle('paused',src==='video'&&!!video.src&&video.paused);
-  $('srctext').textContent=src==='video'?(video.src?(video.paused?'Film paused · clocks frozen':'Following the film'):'Load a video first'):'Real time';
+  const fp=P.paused();
+  pill.classList.toggle('live',src==='real'||(P.has()&&!fp));
+  pill.classList.toggle('paused',src==='video'&&P.has()&&fp);
+  $('srctext').textContent=src==='video'?(P.has()?(fp?'Film paused · clocks frozen':'Following the film'):'Load a video first'):'Real time';
   // handhelds
   const tr=$('tcsRocker'); tr.classList.toggle('tR',st.tOn); tr.classList.toggle('tL',!st.tOn); $('tcsLed').classList.toggle('on',st.tOn);
   const sr=$('schRocker'); sr.classList.toggle('tR',st.rocker==='R'); sr.classList.toggle('tL',st.rocker==='L'); $('schLed').classList.toggle('on',!!st.rocker||st.hold);
@@ -854,14 +884,13 @@ function undo(){
   toast('Nothing to undo');
 }
 function handleSeek(t){
-  lastVid=t*1000; partnerT=t;
+  lastFilm=t; partnerT=t;
   if(reviewing){ rebuild(t); return; }
   log=log.filter(e=>e.v<=t+1e-6);
   if(key){ log=log.filter(e=>!e.partner); keyPartner.forEach(e=>{ if(e.v<=t)log.push(Object.assign({},e,{partner:true})); }); log.sort((a,b)=>a.v-b.v); }
   ranges=ranges.map(r=>[r[0],Math.min(r[1],t)]).filter(r=>r[0]<=t); ranges.push([t,t]);
   rebuild(t); renderLog();
 }
-video.addEventListener('seeked',()=>{ if(src==='video')handleSeek(video.currentTime); });
 
 // ---------------- roles ----------------
 function computePartner(){ keyPartner=key?key.events.filter(e=>!e.auto&&!ownCat(e)).sort((a,b)=>a.v-b.v):[]; }
@@ -874,8 +903,8 @@ function partnerLine(){
 }
 function clearRun(){
   readCfg(); st=fresh(); log=[]; ranges=[]; tot=null; subArmed=false; resetUi();
-  sessionStart=performance.now(); partnerT=filmTime(); lastVid=video.src?video.currentTime*1000:0;
-  if(key&&src==='video'&&video.src){ handleSeek(video.currentTime); }
+  sessionStart=performance.now(); partnerT=filmTime(); lastFilm=P.has()?P.time():0;
+  if(key&&src==='video'&&P.has()){ handleSeek(P.time()); }
   renderLog(); $('results').innerHTML='';
 }
 function setRole(r,quiet){
@@ -897,25 +926,46 @@ let armRole=null;
 // ---------------- video ----------------
 function loadVideo(file){
   if(!file)return;
-  if(video.src)URL.revokeObjectURL(video.src);
-  video.src=URL.createObjectURL(file); video.hidden=false; video.controls=true; $('drop').hidden=true;
+  if(video.getAttribute('src'))URL.revokeObjectURL(video.src);
+  if(ytp){try{ytp.pauseVideo();}catch(e){}} $('ytHost').hidden=true;
+  video.src=URL.createObjectURL(file); video.hidden=false; video.controls=true; $('drop').hidden=true; pmode='file';
+  video.playbackRate=+$('vrate').value;
   $('vwrap').style.borderStyle='solid';
   $('src-video').checked=true; setSrc('video'); clearRun();
   toast('Loaded '+file.name);
 }
-video.addEventListener('error',()=>{ if(!video.getAttribute('src'))return; toast('This video will not play in the page. Play it on another screen and use Real time.'); video.hidden=true; $('drop').hidden=false; video.removeAttribute('src'); video.load(); $('src-real').checked=true; setSrc('real'); });
+video.addEventListener('error',()=>{ if(!video.getAttribute('src'))return; toast('That video will not play in the page. Going back to the built-in game.'); video.hidden=true; video.removeAttribute('src'); video.load();
+  if(ytOK){ pmode='yt'; $('ytHost').hidden=false; setSrc('video'); } else { pmode='none'; $('drop').hidden=false; $('src-real').checked=true; setSrc('real'); } clearRun(); });
+// ----- YouTube -----
+function ytFail(){ if(ytOK)return; $('dropTitle').textContent='Drop a game recording here'; }
+function loadYT(){
+  window.onYouTubeIframeAPIReady=function(){
+    try{
+      ytp=new YT.Player('yt',{videoId:YT_ID,playerVars:{playsinline:1,rel:0,disablekb:1,modestbranding:1,start:TIPOFF||0},
+        events:{
+          onReady:()=>{ ytOK=true; if(pmode==='file')return; pmode='yt'; $('ytHost').hidden=false; $('drop').hidden=true; $('vwrap').style.borderStyle='solid';
+            $('filmCredit').hidden=false; $('tipBtn').hidden=!TIPOFF; $('src-video').checked=true; setSrc('video'); clearRun(); },
+          onStateChange:()=>{ setTimeout(()=>{ const a=document.activeElement; if(a&&a.tagName==='IFRAME'){a.blur(); window.focus();} },0); },
+          onError:()=>{ ytOK=false; if(pmode==='yt'){pmode='none';} $('ytHost').hidden=true; $('drop').hidden=false; ytFail(); toast('The game film could not load. You can still use your own video file.'); }
+        }});
+    }catch(e){ ytFail(); }
+  };
+  const sc=document.createElement('script'); sc.src='https://www.youtube.com/iframe_api'; sc.async=true; sc.onerror=ytFail; document.head.appendChild(sc);
+  setTimeout(ytFail,8000);
+}
+$('tipBtn').addEventListener('click',()=>{ if(pmode==='yt'&&TIPOFF)P.seek(TIPOFF); });
 $('vfile').addEventListener('change',e=>loadVideo(e.target.files[0]));
 const vw=$('vwrap');
 ['dragenter','dragover'].forEach(ev=>vw.addEventListener(ev,e=>{e.preventDefault();$('drop').classList.add('over')}));
 ['dragleave','drop'].forEach(ev=>vw.addEventListener(ev,e=>{e.preventDefault();$('drop').classList.remove('over')}));
 vw.addEventListener('drop',e=>{const f=e.dataTransfer.files[0]; if(f&&f.type.startsWith('video'))loadVideo(f);});
-function vToggle(){ if(!video.src)return; video.paused?video.play():video.pause(); }
-function vSeek(s){ if(!video.src)return; video.currentTime=Math.max(0,video.currentTime+s); }
+function vToggle(){ if(!P.has())return; P.paused()?P.play():P.pause(); }
+function vSeek(s){ if(!P.has())return; P.seek(P.time()+s); }
 $('vplay').addEventListener('click',vToggle);$('vback').addEventListener('click',()=>vSeek(-5));$('vfwd').addEventListener('click',()=>vSeek(5));
-$('vrate').addEventListener('change',e=>{video.playbackRate=+e.target.value});
+$('vrate').addEventListener('change',e=>{P.rate(+e.target.value)});
 function setSrc(s){
-  if(s==='video'&&!video.src){toast('Load a video first');$('src-real').checked=true;s='real';}
-  src=s; lastVid=video.currentTime*1000; lastReal=performance.now(); partnerT=filmTime();
+  if(s==='video'&&!P.has()){toast('Load a video first');$('src-real').checked=true;s='real';}
+  src=s; lastFilm=P.has()?P.time():0; lastReal=performance.now(); partnerT=filmTime();
 }
 document.querySelectorAll('input[name=src]').forEach(r=>r.addEventListener('change',()=>{setSrc(r.value);clearRun();}));
 
@@ -952,14 +1002,14 @@ function setKey(text){
   const nMain=k.events.filter(e=>!isShotEv(e)).length, nShot=k.events.filter(isShotEv).length;
   $('keystatus').innerHTML=`Key loaded: <b>${esc(k.home||'Home')} vs ${esc(k.guest||'Guests')}</b> · ${nMain} main clock clicks, ${nShot} shot clock clicks${k.timing==='real'?' · recorded in real time, so it may not line up with the film':''}.`;
   $('pastebox').hidden=true; toast('Key loaded');
-  if(src==='video'&&video.src&&!reviewing) handleSeek(video.currentTime);
+  if(src==='video'&&P.has()&&!reviewing) handleSeek(P.time());
 }
 $('keyfile').addEventListener('change',e=>{const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>setKey(r.result); r.readAsText(f); e.target.value='';});
 $('pastekeytoggle').addEventListener('click',()=>{$('pastebox').hidden=!$('pastebox').hidden});
 $('usekey').addEventListener('click',()=>setKey($('keytext').value));
 
 function inRanges(v){ if(src==='real')return true; return ranges.some(r=>v>=r[0]-0.25&&v<=r[1]+0.25); }
-function exitReview(){ reviewing=false; $('reviewBanner').hidden=true; if(src==='video'&&video.src)handleSeek(video.currentTime); }
+function exitReview(){ reviewing=false; $('reviewBanner').hidden=true; if(src==='video'&&P.has())handleSeek(P.time()); }
 $('resume').addEventListener('click',()=>{exitReview(); toast('Back to training. Clicks after this point of the film replace the old ones.');});
 $('grade').addEventListener('click',()=>{
   if(!key){toast('Load a key first');return;}
@@ -992,8 +1042,8 @@ $('grade').addEventListener('click',()=>{
     ${rows.map(r=>`<tr class="jump" data-v="${r.v}"><td class="num">${fmtFilm(r.v)}</td><td class="ev">${esc(r.l)}</td><td class="${r.res==='ok'?'res-ok':r.res==='miss'?'res-miss':'res-extra'}">${r.res==='ok'?'Match '+(r.off>=0?'+':'')+r.off.toFixed(2)+'s':r.res==='miss'?'Missed':'Not in key'}</td></tr>`).join('')}
     </tbody></table></div>
     <p class="small">Final score on the key: ${esc(key.home||'Home')} ${key.final?key.final.home:'?'}, ${esc(key.guest||'Guests')} ${key.final?key.final.guest:'?'}. This run: ${st.h.s}–${st.g.s}. Click a row to replay that moment.</p>`;
-  if(src==='video'&&video.src){ reviewing=true; $('reviewBanner').hidden=false; }
-  $('results').querySelector('tbody').addEventListener('click',e=>{const tr=e.target.closest('tr.jump'); if(tr&&video.src&&reviewing){video.currentTime=Math.max(0,+tr.dataset.v-3);}});
+  if(src==='video'&&P.has()){ reviewing=true; $('reviewBanner').hidden=false; }
+  $('results').querySelector('tbody').addEventListener('click',e=>{const tr=e.target.closest('tr.jump'); if(tr&&P.has()&&reviewing){P.seek(+tr.dataset.v-3);}});
 });
 
 // ---------------- toast ----------------
@@ -1005,7 +1055,7 @@ if(saved.h)$('hname').value=saved.h; if(saved.g)$('gname').value=saved.g;
 if(saved.cfg){ CFG_IDS.forEach(i=>{ if(saved.cfg[i]===undefined)return; const el=$(i); if(el.type==='checkbox')el.checked=!!saved.cfg[i]; else el.value=saved.cfg[i]; }); }
 readCfg(); st=fresh();
 role='main'; setRole(saved.role||'main',true);
-renderLog(); render(); requestAnimationFrame(tick);
+renderLog(); render(); requestAnimationFrame(tick); loadYT();
 })();
 </script>
 
