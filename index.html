@@ -202,7 +202,11 @@ details.settings summary{cursor:pointer;color:var(--muted);font-weight:600}
 .toast.on{opacity:1}
 
 /* ---- one-screen operator deck ---- */
-.deck{height:calc(100dvh - 28px);min-height:540px;display:grid;grid-template-rows:auto var(--topH,38%) minmax(0,1fr);gap:10px;margin-bottom:14px}
+.deck{height:calc(100dvh - 28px);min-height:540px;display:grid;grid-template-rows:auto minmax(0,1fr);gap:10px;margin-bottom:14px}
+.deckMain{display:grid;grid-template-columns:minmax(0,var(--vidW,46%)) minmax(0,1fr);gap:10px;min-height:0}
+.vcol{display:flex;flex-direction:column;gap:8px;min-height:0;min-width:0}
+.vcol .vwrap{width:100%;aspect-ratio:16/9;height:auto;max-height:calc(100% - 190px);flex:none;border-style:solid;margin:0}
+.vcol .side{flex:1 1 auto}
 header.top.slim{padding:8px 14px;margin:0}
 .slim .brand{gap:12px}
 .slim .brand img{width:52px}
@@ -215,45 +219,51 @@ header.top.slim{padding:8px 14px;margin:0}
 .seg button[aria-pressed="true"]{background:#fff;color:#000}
 .deckTools .btn{padding:6px 10px}
 a.btn{text-decoration:none;color:var(--fg);display:inline-block}
-.deckTop{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,400px);gap:10px;min-height:0}
-.deckTop .vwrap{height:100%;max-height:none;aspect-ratio:auto;width:100%;border-style:solid;margin:0}
 .side{display:flex;flex-direction:column;gap:7px;min-height:0;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px}
-.side .board{padding:6px;gap:3px 6px;flex:none}
+.side .board{padding:6px 10px;gap:3px 10px;flex:none;grid-template-columns:1fr auto 1fr auto;align-items:center}
 .side .team{gap:3px}
 .side .tname{font-size:14px}
-.side .score{font-size:clamp(22px,min(3.2vw,5vh),44px)}
-.side .gclock{font-size:clamp(22px,min(3.2vw,5vh),44px);padding:2px 4px}
-.side .sclock{font-size:clamp(20px,min(2.8vw,4.4vh),38px);padding:1px 6px}
+.side .score{font-size:clamp(24px,2.4vw,46px)}
+.side .gclock{font-size:clamp(26px,2.6vw,50px);padding:2px 4px}
+.side .sclock{font-size:clamp(24px,2.4vw,46px);padding:1px 6px}
 .side .mini{gap:8px;font-size:9.5px}
 .side .mini b{font-size:14px}
 .side .bonus{font-size:11px;padding:0 6px}
 .side .per{font-size:10px;gap:6px}
 .side .per b{font-size:16px}
 .side .arrow{font-size:16px;width:16px}
-.side .shotbox{padding-top:4px;margin-top:0}
-.filmbar{display:flex;flex-wrap:wrap;gap:5px;flex:none}
+.side .shotbox{grid-column:auto;flex-direction:column;gap:4px;border-top:0;border-left:1px solid #1d1d22;padding:0 0 0 10px;margin:0;align-self:stretch;justify-content:center}
+.side .shotbox .lbl{font-size:11px;letter-spacing:.12em}
+.filmbar{display:flex;flex-wrap:wrap;gap:5px;flex:none;align-items:center}
+.filmrow{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center}
 .filmbar .btn{padding:5px 8px;font-size:13px}
 .side .timing{margin:0;gap:4px 10px}
 .side .filmcredit{margin:0}
 .side .partner{margin:0}
 .side .banner{margin:0}
-.deckBottom{min-height:0;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px;overflow:hidden;display:flex;justify-content:center;align-items:flex-start}
+.deckBottom{min-height:0;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px;overflow:hidden;display:flex;justify-content:center;align-items:center}
 .scaleBox{position:relative;flex:none}
 .scaleRoot{position:absolute;top:0;left:0;width:max-content;transform-origin:top left}
 .scaleRoot .consoleRow,.scaleRoot .sideRow{flex-wrap:nowrap}
+.scaleRoot.stack .consoleRow,.scaleRoot.stack .sideRow{flex-direction:column;align-items:center;gap:14px}
+.scaleRoot.stack #tcsWrap{flex-direction:row;gap:18px}
+.scaleRoot.stack #tcsWrap .hhcap,.scaleRoot.stack #tcsWrap>.small{margin:0;max-width:12ch;text-align:center}
 .scaleRoot .ovscroll{overflow:visible;flex:none}
 .scaleRoot .hhtips{width:46ch;flex:none;font-size:13px}
 .side2{font-family:var(--display);font-weight:800;font-size:15px;letter-spacing:.06em;color:var(--muted);text-align:center;line-height:1.15}
 .side2 b{display:block;font-family:var(--mono);font-size:22px;color:var(--led-red)}
-.mid{padding:14px 4px 4px;justify-content:flex-start;gap:22px}
-.mid .mark{font-size:24px;letter-spacing:.08em;color:#fff}
+.mid{padding:14px 4px 4px;justify-content:flex-start;gap:22px;flex:none;width:140px}
+.ovbody{justify-content:flex-start;gap:12px}
+.kt .lab{font-size:15px}
+.kt .lab.big{font-size:34px}
+.mid .mark{font-size:21px;letter-spacing:.06em;color:#fff}
 .overlay{border-radius:0 0 14px 14px;padding:12px 16px}
 #after{margin-bottom:14px;scroll-margin-top:10px}
 #deck{scroll-margin-top:0}
 @media (max-width:900px){
   .deck{height:auto;min-height:0;grid-template-rows:auto auto auto}
-  .deckTop{grid-template-columns:minmax(0,1fr)}
-  .deckTop .vwrap{aspect-ratio:16/9;height:auto}
+  .deckMain{grid-template-columns:minmax(0,1fr)}
+  .vcol .vwrap{max-height:none}
   .deckBottom{overflow:visible}
   .seg{display:none}
 }
@@ -282,7 +292,8 @@ a.btn{text-decoration:none;color:var(--fg);display:inline-block}
   </div>
 </header>
 
-<div class="deckTop">
+<div class="deckMain">
+<div class="vcol">
   <div class="vwrap" id="vwrap">
     <div id="ytHost" hidden><div id="yt"></div></div>
     <video id="video" playsinline preload="metadata" hidden></video>
@@ -323,7 +334,7 @@ a.btn{text-decoration:none;color:var(--fg);display:inline-block}
       <select id="vrate" class="btn" aria-label="Playback speed"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1×</option></select>
       <button class="btn ghost" id="tipBtn" hidden>Tip-off</button>
     </div>
-    <div class="timing">
+    <div class="timing filmrow">
       <span class="pill" id="srcpill"><span class="dot"></span><span id="srctext">Real time</span></span>
       <label class="small"><input type="radio" name="src" value="video" id="src-video"> Follow film</label>
       <label class="small"><input type="radio" name="src" value="real" id="src-real" checked> Real time</label>
@@ -405,6 +416,7 @@ a.btn{text-decoration:none;color:var(--fg);display:inline-block}
     </div>
   </div>
 </div></div></div>
+</div>
 </div>
 
 <section class="panel" id="after">
@@ -1121,18 +1133,25 @@ role='main'; setRole(saved.role||'main',true);
 // ----- fit the console to the space under the film -----
 function fitConsole(){
   const box=$('ccol'), r=$('scaleRoot'), sbx=$('scaleBox');
-  const nw=r.offsetWidth, nh=r.offsetHeight; if(!nw||!nh)return;
   const bw=box.clientWidth-16, bh=box.clientHeight-16;
   const narrow=window.matchMedia('(max-width:900px)').matches;
-  let sc=narrow?Math.min(bw/nw,1):Math.min(bw/nw,bh/nh,1.2);
-  sc=Math.max(sc,0.3);
+  let best=null;
+  for(const mode of ['row','stack']){
+    r.classList.toggle('stack',mode==='stack');
+    const w=r.offsetWidth, h=r.offsetHeight; if(!w||!h)continue;
+    const sc=narrow?Math.min(bw/w,1):Math.min(bw/w,bh/h,1.25);
+    if(!best||sc>best.sc+0.01)best={mode,sc,w,h};
+  }
+  if(!best)return;
+  r.classList.toggle('stack',best.mode==='stack');
+  const nw=best.w, nh=best.h; let sc=Math.max(best.sc,0.3);
   r.style.transform='scale('+sc+')'; sbx.style.width=(nw*sc)+'px'; sbx.style.height=(nh*sc)+'px';
 }
 try{ new ResizeObserver(()=>fitConsole()).observe($('ccol')); }catch(e){}
 window.addEventListener('resize',fitConsole);
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(fitConsole);
-const SIZES={s:'30%',m:'38%',l:'50%'};
-function setSize(k){ if(!SIZES[k])k='m'; document.documentElement.style.setProperty('--topH',SIZES[k]);
+const SIZES={s:'36%',m:'45%',l:'56%'};
+function setSize(k){ if(!SIZES[k])k='m'; document.documentElement.style.setProperty('--vidW',SIZES[k]);
   document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.size===k)); lsSet({size:k}); requestAnimationFrame(fitConsole); }
 document.querySelectorAll('.seg button').forEach(b=>b.addEventListener('click',()=>setSize(b.dataset.size)));
 $('fsBtn').addEventListener('click',()=>{
