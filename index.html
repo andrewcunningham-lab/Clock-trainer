@@ -267,6 +267,17 @@ a.btn{text-decoration:none;color:var(--fg);display:inline-block}
   .deckBottom{overflow:visible}
   .seg{display:none}
 }
+.modal{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.78);overflow:auto;padding:24px max(16px, env(safe-area-inset-left, 0px))}
+.mbox{max-width:1000px;margin:0 auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.akRegions button[aria-pressed="true"]{outline:2px solid #fff}
+.akRegions .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:middle}
+.akCanvasWrap{background:#000;border-radius:8px;overflow:hidden;max-width:100%}
+#akCanvas{display:block;width:100%;height:auto;cursor:crosshair;touch-action:none}
+.akReads{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}
+.akReads .stat b{font-size:18px}
+.akStatus{position:fixed;top:calc(10px + env(safe-area-inset-top, 0px));left:50%;transform:translateX(-50%);z-index:35;display:flex;align-items:center;gap:12px;background:#000;border:2px solid var(--scarlet);border-radius:10px;padding:6px 8px 6px 12px;font-weight:600;font-size:13px;max-width:calc(100vw - 32px)}
+.recdot{width:10px;height:10px;border-radius:50%;background:var(--scarlet);animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:.2}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -462,6 +473,7 @@ a.btn{text-decoration:none;color:var(--fg);display:inline-block}
       <button class="btn ghost" id="pastekeytoggle">Paste key text</button>
       <label class="small">Window ±<input id="tol" type="number" min="0.2" max="5" step="0.1" value="1.5" style="width:56px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:3px 5px"> s</label>
       <button class="btn primary" id="grade">Grade this run</button>
+      <button class="btn" id="akOpen">Auto-build key from broadcast</button>
     </div>
     <div id="pastebox" hidden style="margin-top:8px">
       <textarea class="io" id="keytext" placeholder="Paste a saved log here"></textarea>
@@ -514,6 +526,39 @@ a.btn{text-decoration:none;color:var(--fg);display:inline-block}
     </div>
   </details>
 </section>
+<div class="modal" id="akModal" hidden role="dialog" aria-labelledby="akTitle">
+  <div class="mbox">
+    <div class="ph"><h2 id="akTitle">Auto-build an answer key</h2><button class="btn ghost" id="akClose">Close</button></div>
+    <ol class="steps">
+      <li>Use Chrome or Edge. Click <b>Share this tab</b> and pick this tab.</li>
+      <li>Play the film until the score graphic is on screen, keep the mouse off the video, then click <b>Grab frame</b>.</li>
+      <li>Pick each item below and drag a tight box around its numbers on the picture. Click <b>Test readings</b> to check them.</li>
+      <li>Rewind to where you want the key to start (Tip-off), then click <b>Start recording</b>. Let it play. Don't scroll, resize, or touch the video until you click <b>Stop &amp; build key</b>.</li>
+    </ol>
+    <div class="row">
+      <button class="btn primary" id="akShare">Share this tab</button>
+      <button class="btn" id="akGrab">Grab frame</button>
+      <span class="small" id="akMsg"></span>
+    </div>
+    <div class="row akRegions" id="akRegions"></div>
+    <div class="row">
+      <label class="small">Left score belongs to <select id="akLeft" class="btn"><option value="h">Home (left on our board)</option><option value="g">Guests</option></select></label>
+      <label class="small">Starting period <select id="akPeriod" class="btn"><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+    </div>
+    <div class="akCanvasWrap"><canvas id="akCanvas" width="960" height="540"></canvas></div>
+    <div class="akReads" id="akReads"></div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn" id="akTest">Test readings</button>
+      <button class="btn primary" id="akStart">Start recording</button>
+    </div>
+    <div id="akResult" hidden style="margin-top:12px">
+      <p class="small" id="akSummary"></p>
+      <textarea class="io" id="akOut" readonly></textarea>
+      <div class="row" style="margin-top:6px"><button class="btn primary" id="akCopy">Copy key</button><span class="small">The key is already loaded. Copy it and send it to Claude to build it in for everyone.</span></div>
+    </div>
+  </div>
+</div>
+<div class="akStatus" id="akStatus" hidden><span class="recdot"></span><span id="akStatusText">Recording</span><button class="btn primary" id="akStop">Stop &amp; build key</button></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -547,6 +592,7 @@ let role='main';
 let src='real';
 let sessionStart=performance.now(), lastReal=performance.now(), lastFilm=0;
 // ----- film player: built-in YouTube game, or a local file -----
+const BUILTIN_KEY=null;     // paste a finished key object here to load it for everyone
 const YT_ID='QRmJ6cASkw8';   // Iowa PBS: 2026 IGHSAU Class 1A final
 const TIPOFF=771;            // 12:51 into the video: opening tip
 let pmode='none', ytp=null, ytOK=false, ytSmooth={t:0,at:0};
@@ -895,6 +941,7 @@ sb.addEventListener('pointerdown',e=>{e.preventDefault(); if(role!=='shot')retur
 document.addEventListener('keydown',e=>{
   const t=e.target; if(t&&((t.tagName==='INPUT'&&!['radio','checkbox','file'].includes(t.type))||t.tagName==='TEXTAREA'||t.tagName==='SELECT'))return;
   if(e.metaKey||e.ctrlKey||e.altKey)return;
+  if(!$('akModal').hidden)return;
   const k=e.key;
   if(k==='Backspace'){e.preventDefault();undo();return;}
   if(k==='/'){e.preventDefault();vToggle();return;}
@@ -1073,9 +1120,9 @@ function setKey(text){
   let k; try{k=JSON.parse(text);}catch(e){k=null;}
   if(!k||!Array.isArray(k.events)||k.format!=='sandoval-nevco-log'){toast('That text is not a saved log from this trainer.');return;}
   key=k; computePartner(); partnerLine();
-  const nMain=k.events.filter(e=>!isShotEv(e)).length, nShot=k.events.filter(isShotEv).length;
-  $('keystatus').innerHTML=`Key loaded: <b>${esc(k.home||'Home')} vs ${esc(k.guest||'Guests')}</b> · ${nMain} main clock clicks, ${nShot} shot clock clicks${k.timing==='real'?' · recorded in real time, so it may not line up with the film':''}.`;
-  $('pastebox').hidden=true; toast('Key loaded');
+  const nMain=k.events.filter(e=>!e.x&&!isShotEv(e)).length, nShot=k.events.filter(e=>!e.x&&isShotEv(e)).length;
+  $('keystatus').innerHTML=`${k.builtin?'Built-in key':k.auto?'Auto-built key':'Key'} loaded: <b>${esc(k.home||'Home')} vs ${esc(k.guest||'Guests')}</b> · ${nMain} main clock clicks, ${nShot} shot clock clicks${k.timing==='real'?' · recorded in real time, so it may not line up with the film':''}.`;
+  $('pastebox').hidden=true; if(!k.builtin)toast('Key loaded');
   if(src==='video'&&P.has()&&!reviewing) handleSeek(P.time());
 }
 $('keyfile').addEventListener('change',e=>{const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>setKey(r.result); r.readAsText(f); e.target.value='';});
@@ -1087,16 +1134,18 @@ function exitReview(){ reviewing=false; $('reviewBanner').hidden=true; if(src===
 $('resume').addEventListener('click',()=>{exitReview(); toast('Back to training. Clicks after this point of the film replace the old ones.');});
 $('grade').addEventListener('click',()=>{
   if(!key){toast('Load a key first');return;}
-  const T0=log.filter(e=>!e.auto&&!e.partner&&GRADED.has(e.c));
-  if(!T0.length){toast('Run the film and make some clicks first');return;}
   const tol=+$('tol').value||1.5;
-  const K=key.events.filter(e=>!e.auto&&ownCat(e)&&GRADED.has(e.c)&&inRanges(e.v)).sort((a,b)=>a.v-b.v);
+  const K=key.events.filter(e=>!e.auto&&!e.x&&ownCat(e)&&GRADED.has(e.c)&&inRanges(e.v)).sort((a,b)=>a.v-b.v);
+  const kGroups=new Set(K.map(e=>GROUP[e.c]));
+  const T0=log.filter(e=>!e.auto&&!e.partner&&GRADED.has(e.c)&&ownCat(e)&&kGroups.has(GROUP[e.c]));
+  if(!T0.length){toast('Run the film and make some clicks first');return;}
   const used=new Set(), rows=[], offs=[], groups={}; let hit=0;
   K.forEach(k=>{
     const g=GROUP[k.c]; groups[g]=groups[g]||{n:0,hit:0}; groups[g].n++;
     let best=-1,bd=1e9; const mk=matchKey(k);
-    T0.forEach((t,i)=>{ if(used.has(i)||matchKey(t)!==mk)return; const d=Math.abs(t.v-k.v); if(d<=tol&&d<bd){bd=d;best=i;} });
-    if(best>=0){used.add(best);hit++;groups[g].hit++;const off=T0[best].v-k.v;offs.push(off);rows.push({v:k.v,l:label(k),res:'ok',off});}
+    const tk=(key.auto&&k.c==='SCORE')?tol*2.5:tol, lo=(k.w!==undefined)?k.w-0.3:k.v-tk, hi=k.v+tk;
+    T0.forEach((t,i)=>{ if(used.has(i)||matchKey(t)!==mk)return; if(t.v<lo||t.v>hi)return; const d=Math.abs(t.v-k.v); if(d<bd){bd=d;best=i;} });
+    if(best>=0){used.add(best);hit++;groups[g].hit++;const bt=T0[best].v;const off=(k.w!==undefined&&bt<k.v)?0:bt-k.v;offs.push(off);rows.push({v:k.v,l:label(k),res:'ok',off});}
     else rows.push({v:k.v,l:label(k),res:'miss'});
   });
   T0.forEach((t,i)=>{ if(!used.has(i))rows.push({v:t.v,l:label(t),res:'extra'}); });
@@ -1119,6 +1168,215 @@ $('grade').addEventListener('click',()=>{
   if(src==='video'&&P.has()){ reviewing=true; $('reviewBanner').hidden=false; }
   $('results').querySelector('tbody').addEventListener('click',e=>{const tr=e.target.closest('tr.jump'); if(tr&&P.has()&&reviewing){P.seek(+tr.dataset.v-3);}});
 });
+
+
+// ================= AUTO-BUILD A KEY FROM THE BROADCAST SCORE GRAPHIC =================
+const AK={stream:null,sv:null,frame:null,fctx:null,still:null,regions:{},cur:'gc',sch:null,rec:false,timer:null,events:[],st:{},period:1,leftHome:true,lastT:0};
+const AK_REG=[['gc','Game clock','#ffb21e'],['sc','Shot clock','#ff3b3b'],['ls','Left score','#3ecf7a'],['rs','Right score','#6aa8ff']];
+try{ const sv=lsGet().akRegions; if(sv)AK.regions=sv; }catch(e){}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function akMsg(m){ $('akMsg').textContent=m; }
+function akRegionButtons(){
+  $('akRegions').innerHTML=AK_REG.map(([k,l,c])=>`<button class="btn" data-ak="${k}" aria-pressed="${AK.cur===k}"><span class="sw" style="background:${c}"></span>${l}${AK.regions[k]?' ✓':''}</button>`).join('');
+  $('akRegions').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{AK.cur=b.dataset.ak;akRegionButtons();}));
+}
+function akLoadTess(){ return new Promise((res,rej)=>{ if(window.Tesseract)return res(); const sc=document.createElement('script'); sc.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js'; sc.onload=res; sc.onerror=()=>rej(new Error('ocr')); document.head.appendChild(sc); }); }
+async function akInitOCR(){
+  if(AK.sch)return;
+  akMsg('Loading the number reader (first time takes a few seconds)…');
+  await akLoadTess();
+  const sch=Tesseract.createScheduler();
+  for(let i=0;i<3;i++){ const w=await Tesseract.createWorker('eng'); await w.setParameters({tessedit_char_whitelist:'0123456789:.',tessedit_pageseg_mode:'7'}); sch.addWorker(w); }
+  AK.sch=sch; akMsg('Number reader ready.');
+}
+async function akShare(){
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getDisplayMedia){akMsg('This browser cannot share a tab. Use Chrome or Edge.');return;}
+  try{
+    const s=await navigator.mediaDevices.getDisplayMedia({video:{displaySurface:'browser',frameRate:15},audio:false,preferCurrentTab:true,selfBrowserSurface:'include'});
+    AK.stream=s; const v=document.createElement('video'); v.muted=true; v.playsInline=true; v.srcObject=s; await v.play(); AK.sv=v;
+    s.getVideoTracks()[0].addEventListener('ended',()=>{ if(AK.rec)akStop(); AK.stream=null; AK.sv=null; akMsg('Tab sharing stopped.'); });
+    akMsg('Sharing. Play the film until the score graphic shows, then click Grab frame.');
+  }catch(e){ akMsg('Tab sharing was cancelled or blocked. Use Chrome or Edge and pick this tab.'); }
+}
+function akDraw(){
+  const v=AK.sv; if(!v)return false; const w=v.videoWidth,h=v.videoHeight; if(!w||!h)return false;
+  if(!AK.frame){AK.frame=document.createElement('canvas');}
+  if(AK.frame.width!==w||AK.frame.height!==h){AK.frame.width=w;AK.frame.height=h;AK.fctx=AK.frame.getContext('2d',{willReadFrequently:true});}
+  AK.fctx.drawImage(v,0,0,w,h); return true;
+}
+async function akGrab(){
+  if(!AK.sv){akMsg('Share the tab first.');return;}
+  $('akModal').hidden=true; await sleep(500); const ok=akDraw(); $('akModal').hidden=false;
+  if(!ok){akMsg('No picture yet. Try again.');return;}
+  const c=document.createElement('canvas'); c.width=AK.frame.width; c.height=AK.frame.height; c.getContext('2d').drawImage(AK.frame,0,0); AK.still=c;
+  akPaint(); akMsg('Now drag a box around each item.');
+}
+let akDrag=null;
+function akPaint(){
+  const c=$('akCanvas'), x=c.getContext('2d');
+  if(AK.still){ c.width=AK.still.width; c.height=AK.still.height; x.drawImage(AK.still,0,0); }
+  else { x.fillStyle='#000'; x.fillRect(0,0,c.width,c.height); x.fillStyle='#888'; x.font='20px sans-serif'; x.fillText('Share this tab, then Grab frame.',30,50); }
+  const lw=Math.max(2,c.width/500);
+  AK_REG.forEach(([k,l,col])=>{ const r=AK.regions[k]; if(!r)return; x.strokeStyle=col; x.lineWidth=lw; x.strokeRect(r.x,r.y,r.w,r.h); x.fillStyle=col; x.font=`${Math.round(lw*7)}px sans-serif`; x.fillText(l,r.x,Math.max(12,r.y-lw*2)); });
+  if(akDrag&&akDrag.cur){ const d=akDrag; x.strokeStyle='#fff'; x.lineWidth=lw; x.strokeRect(Math.min(d.x0,d.cur.x),Math.min(d.y0,d.cur.y),Math.abs(d.cur.x-d.x0),Math.abs(d.cur.y-d.y0)); }
+}
+function akPt(e){ const c=$('akCanvas'), b=c.getBoundingClientRect(); return {x:(e.clientX-b.left)*c.width/b.width, y:(e.clientY-b.top)*c.height/b.height}; }
+$('akCanvas').addEventListener('pointerdown',e=>{ if(!AK.still)return; const p=akPt(e); akDrag={x0:p.x,y0:p.y,cur:p}; try{$('akCanvas').setPointerCapture(e.pointerId)}catch(_){} });
+$('akCanvas').addEventListener('pointermove',e=>{ if(!akDrag)return; akDrag.cur=akPt(e); akPaint(); });
+$('akCanvas').addEventListener('pointerup',()=>{
+  if(!akDrag)return; const d=akDrag; akDrag=null;
+  const r={x:Math.round(Math.min(d.x0,d.cur.x)),y:Math.round(Math.min(d.y0,d.cur.y)),w:Math.round(Math.abs(d.cur.x-d.x0)),h:Math.round(Math.abs(d.cur.y-d.y0))};
+  if(r.w>4&&r.h>4){ AK.regions[AK.cur]=r; lsSet({akRegions:AK.regions}); const i=AK_REG.findIndex(a=>a[0]===AK.cur); const nxt=AK_REG.find((a,j)=>j>i&&!AK.regions[a[0]]); if(nxt)AK.cur=nxt[0]; }
+  akRegionButtons(); akPaint();
+});
+function akCrop(src,r){
+  const sc=Math.max(2,64/r.h), W=Math.round(r.w*sc), H=Math.round(r.h*sc), pad=14;
+  const c=document.createElement('canvas'); c.width=W+pad*2; c.height=H+pad*2;
+  const x=c.getContext('2d',{willReadFrequently:true}); x.fillStyle='#fff'; x.fillRect(0,0,c.width,c.height);
+  x.imageSmoothingEnabled=true; x.drawImage(src,r.x,r.y,r.w,r.h,pad,pad,W,H);
+  const d=x.getImageData(pad,pad,W,H), p=d.data, n=W*H, g=new Float32Array(n); let mn=255,mx=0;
+  for(let i=0,j=0;j<n;i+=4,j++){ const v=p[i]*0.3+p[i+1]*0.59+p[i+2]*0.11; g[j]=v; if(v<mn)mn=v; if(v>mx)mx=v; }
+  const thr=(mn+mx)/2; let bright=0; for(let j=0;j<n;j++) if(g[j]>thr)bright++;
+  const textBright=bright<n/2;
+  for(let i=0,j=0;j<n;i+=4,j++){ const on=textBright?g[j]>thr:g[j]<thr; const o=on?0:255; p[i]=p[i+1]=p[i+2]=o; p[i+3]=255; }
+  x.putImageData(d,pad,pad); return c;
+}
+function akSig(r){
+  const d=AK.fctx.getImageData(r.x,r.y,r.w,r.h).data, out=new Float32Array(96); let k=0;
+  for(let yy=0;yy<6;yy++)for(let xx=0;xx<16;xx++){ const px=Math.min(r.w-1,Math.floor((xx+0.5)*r.w/16)), py=Math.min(r.h-1,Math.floor((yy+0.5)*r.h/6)), i=(py*r.w+px)*4; out[k++]=d[i]*0.3+d[i+1]*0.59+d[i+2]*0.11; }
+  return out;
+}
+function akDiff(a,b){ let s=0; for(let i=0;i<a.length;i++)s+=Math.abs(a[i]-b[i]); return s/a.length; }
+function akParseClock(t){
+  t=t.replace(/\s/g,''); let m, v=null;
+  if((m=t.match(/^(\d{1,2}):(\d{2})(?:\.\d)?$/))&&+m[2]<60) v=+m[1]*60+ +m[2];
+  else if((m=t.match(/^:?(\d{1,2})\.(\d)$/))) v=+m[1]+ +m[2]/10;
+  else if((m=t.match(/^(\d{1,2})(\d{2})$/))&&+m[2]<60) v=+m[1]*60+ +m[2];
+  if(v===null||v>Math.max(cfg.q,8)*60) return null; return v;
+}
+function akParseShot(t){ t=t.replace(/\s|:/g,''); const m=t.match(/^(\d{1,2})(?:\.(\d))?$/); if(!m)return null; const v=+m[1]+(m[2]?+m[2]/10:0); return v<=Math.max(cfg.r1,35)?v:null; }
+function akParseScore(t){ t=t.replace(/\s|:|\./g,''); return /^\d{1,3}$/.test(t)?+t:null; }
+function akFmtClock(v){ if(v===undefined||v===null)return '—'; return v>=60?Math.floor(v/60)+':'+String(Math.round(v%60)).padStart(2,'0'):v.toFixed(1); }
+async function akTest(){
+  if(!AK.still){akMsg('Grab a frame first.');return;}
+  try{ await akInitOCR(); }catch(e){ akMsg('The number reader could not load. Check the internet connection.'); return; }
+  const out=[];
+  for(const [k,l] of AK_REG){ const r=AK.regions[k]; if(!r){out.push(`<div class="stat"><span>${l}</span><b>no box</b></div>`);continue;}
+    const res=await AK.sch.addJob('recognize',akCrop(AK.still,r)); const txt=(res.data.text||'').trim();
+    const v=k==='gc'?akParseClock(txt):k==='sc'?akParseShot(txt):akParseScore(txt);
+    out.push(`<div class="stat"><span>${l} · read "${esc(txt)}"</span><b class="${v===null?'res-miss':'res-ok'}">${v===null?'Not readable':(k==='gc'?akFmtClock(v):v)}</b></div>`); }
+  $('akReads').innerHTML=out.join(''); akMsg('If a reading is wrong, redraw that box tighter around just the numbers.');
+}
+function akEmit(e){ e.v=+Math.max(0,e.v).toFixed(2); const G=AK.st.gc, S=AK.st.sc; e.gc=G?akFmtClock(G.prev):''; e.sc=S&&S.prev!==undefined?String(Math.ceil(S.prev)):''; AK.events.push(e); }
+function akGC(S,t,v,wasGap){
+  if(S.prev===undefined){ S.prev=v; S.lastChangeT=t; akEmit({v:t,c:'GC_SET',n:Math.round(v*1000),x:1}); return; }
+  if(v===S.prev){ S.pend=null; if(wasGap&&S.running){ S.running=false; S.stopT=S.gapT+0.3; akEmit({v:S.stopT,c:'GC_STOP'}); } return; }
+  const d=S.prev-v, under=v<60, lag=under?0.1:0.5;
+  const tick=d>0&&d<=(wasGap?(t-S.gapT)+2:2.6);
+  if(tick){
+    S.pend=null;
+    if(!S.running){ S.running=true; const st=Math.max(wasGap?t-d-lag:t-lag,(S.stopT||0)+0.05); S.lastStartT=st; akEmit({v:st,c:'GC_START'}); }
+    S.prev=v; S.lastChangeT=t;
+    if(v===0){ S.running=false; S.stopT=t+0.5; akEmit({v:S.stopT,c:'GC_STOP'}); }
+    return;
+  }
+  if(!S.pend||S.pend.v!==v){ S.pend={v,t}; S.recheck=true; S.recheckT=t; return; }
+  const t0=S.pend.t; S.pend=null;
+  if(S.running){ S.running=false; S.stopT=S.lastChangeT+0.5; akEmit({v:S.stopT,c:'GC_STOP'}); }
+  akEmit({v:t0,c:'GC_SET',n:Math.round(v*1000)});
+  if(v>S.prev+20&&S.prev<=5&&(Math.abs(v-cfg.q*60)<1.5||Math.abs(v-240)<1.5)){ AK.period++; akEmit({v:t0+0.2,c:'PERIOD',n:AK.period}); }
+  S.prev=v; S.lastChangeT=t0;
+}
+function akSC(S,t,v){
+  const G=AK.st.gc;
+  if(S.prev===undefined){ S.prev=v; return; }
+  if(v===S.prev){ S.pend=null; return; }
+  if(v<S.prev&&S.prev-v<=2.6){
+    S.pend=null;
+    if(S.holding){ S.holding=false; const go=Math.max(t-(v<5?0.1:0.5),S.resetT+0.05); const e={v:go,c:'GO'};
+      if(G&&G.lastStartT!==undefined&&Math.abs(G.lastStartT-go)<1.5&&G.lastStartT>S.resetT) e.w=+S.resetT.toFixed(2);
+      akEmit(e); }
+    S.prev=v; return;
+  }
+  if(v>S.prev){
+    const isR1=Math.abs(v-cfg.r1)<0.6, isR2=Math.abs(v-cfg.r2)<0.6;
+    if(!(isR1||isR2)&&(!S.pend||S.pend.v!==v)){ S.pend={v,t}; S.recheck=true; S.recheckT=t; return; }
+    const t0=(S.pend&&S.pend.v===v)?S.pend.t:t; S.pend=null;
+    if(isR1||isR2){ S.holding=true; S.resetT=t0; akEmit({v:t0,c:isR1?'R35':'R20'}); }
+    S.prev=v; return;
+  }
+  if(!S.pend||S.pend.v!==v){ S.pend={v,t}; S.recheck=true; S.recheckT=t; return; }
+  S.pend=null; S.prev=v;
+}
+function akScore(k,S,t,v){
+  const tm=((k==='ls')===AK.leftHome)?'h':'g';
+  if(S.prev===undefined){ S.prev=v; akEmit({v:t,c:'SCORE_SET',t:tm,n:v,x:1}); return; }
+  if(v===S.prev){ S.pend=null; return; }
+  if(!S.pend||S.pend.v!==v){ S.pend={v,t}; S.recheck=true; S.recheckT=t; return; }
+  const t0=S.pend.t; S.pend=null; const d=v-S.prev;
+  if(d>=1&&d<=3) akEmit({v:t0,c:'SCORE',t:tm,n:d}); else akEmit({v:t0,c:'SCORE_SET',t:tm,n:v});
+  S.prev=v;
+}
+function akHandle(k,t,txt){
+  const S=AK.st[k]; const v=k==='gc'?akParseClock(txt):k==='sc'?akParseShot(txt):akParseScore(txt);
+  if(v===null){ if(S.valid){S.valid=false; S.gapT=t;} return; }
+  const wasGap=S.valid===false&&S.prev!==undefined; S.valid=true;
+  if(k==='gc')akGC(S,t,v,wasGap); else if(k==='sc')akSC(S,t,v); else akScore(k,S,t,v);
+}
+async function akOCR(k,t){
+  const r=AK.regions[k], S=AK.st[k]; const c=akCrop(AK.frame,r); const id=++S.seq;
+  try{ const res=await AK.sch.addJob('recognize',c); if(!AK.rec||id<=S.done)return; S.done=id; akHandle(k,t,(res.data.text||'').trim()); }catch(e){}
+}
+function akTick(){
+  if(!AK.rec||P.paused()||!akDraw())return;
+  const t=P.time();
+  if(t<AK.lastT-0.5){ toast('The film jumped backward, so recording stopped. Start again from the point you want.'); akStop(); return; }
+  AK.lastT=t;
+  for(const [k] of AK_REG){
+    const r=AK.regions[k]; if(!r)continue; const S=AK.st[k];
+    const sig=akSig(r), changed=!S.sig||akDiff(sig,S.sig)>6;
+    if(changed){ S.sig=sig; S.stable=false; akOCR(k,t); }
+    else { S.stable=true; if(S.recheck&&t-S.recheckT>0.25){ S.recheck=false; akOCR(k,t); } }
+  }
+  const G=AK.st.gc;
+  if(G&&G.running&&G.valid&&G.stable&&!G.pend){
+    const lim=G.prev>=60?1.4:0.45;
+    if(t-G.lastChangeT>lim){ G.running=false; G.stopT=G.lastChangeT+(G.prev>=60?0.5:0.05); akEmit({v:G.stopT,c:'GC_STOP'}); }
+  }
+  const ls=AK.st.ls, rs=AK.st.rs, sc=AK.st.sc;
+  $('akStatusText').textContent=`Recording · ${AK.events.filter(e=>!e.x).length} clicks found · Clock ${akFmtClock(G&&G.prev)}${G&&G.running?' ▸':''} · Shot ${sc&&sc.prev!==undefined?Math.ceil(sc.prev):'—'} · ${ls&&ls.prev!==undefined?ls.prev:'—'}–${rs&&rs.prev!==undefined?rs.prev:'—'}`;
+}
+async function akStart(){
+  if(!AK.stream){akMsg('Share this tab first.');return;}
+  if(!AK.regions.gc){akMsg('Draw a box around the game clock first.');return;}
+  if(!P.has()){akMsg('Load the film first.');return;}
+  try{ await akInitOCR(); }catch(e){ akMsg('The number reader could not load. Check the internet connection.'); return; }
+  AK.events=[]; AK.st={}; AK_REG.forEach(([k])=>{AK.st[k]={seq:0,done:0};});
+  AK.period=+$('akPeriod').value; AK.leftHome=$('akLeft').value==='h';
+  $('src-video').checked=true; setSrc('video');
+  AK.lastT=P.time(); akEmit({v:AK.lastT,c:'PERIOD',n:AK.period,x:1});
+  AK.rec=true; $('akResult').hidden=true; $('akModal').hidden=true; $('akStatus').hidden=false;
+  AK.timer=setInterval(akTick,100); P.play();
+}
+function akStop(){
+  if(!AK.rec)return; AK.rec=false; clearInterval(AK.timer); $('akStatus').hidden=true; try{P.pause();}catch(e){}
+  const evs=AK.events.slice().sort((a,b)=>a.v-b.v);
+  const hs=AK.st[AK.leftHome?'ls':'rs'], gs=AK.st[AK.leftHome?'rs':'ls'];
+  const payload={format:'sandoval-nevco-log',version:2,auto:true,saved:new Date().toISOString(),role:'both',home:$('hname').value,guest:$('gname').value,timing:'video',
+    settings:{r1:cfg.r1,r2:cfg.r2,q:cfg.q},final:{period:AK.period,home:hs&&hs.prev!==undefined?hs.prev:null,guest:gs&&gs.prev!==undefined?gs.prev:null},events:evs};
+  const txt=JSON.stringify(payload); $('akOut').value=txt;
+  const n=c=>evs.filter(e=>!e.x&&c.includes(e.c)).length;
+  $('akSummary').textContent=`Found ${n(['GC_START','GC_STOP'])} time on/off, ${n(['SCORE'])} scoring plays, ${n(['PERIOD'])} period changes, ${n(['R35','R20'])} shot clock resets, and ${n(['GO'])} shot clock releases.`;
+  $('akResult').hidden=false; $('akModal').hidden=false; setKey(txt);
+}
+$('akOpen').addEventListener('click',()=>{ $('akModal').hidden=false; akRegionButtons(); akPaint(); });
+$('akClose').addEventListener('click',()=>{ $('akModal').hidden=true; });
+$('akShare').addEventListener('click',akShare);
+$('akGrab').addEventListener('click',akGrab);
+$('akTest').addEventListener('click',akTest);
+$('akStart').addEventListener('click',akStart);
+$('akStop').addEventListener('click',akStop);
+$('akCopy').addEventListener('click',()=>{ const t=$('akOut'); if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t.value).then(()=>toast('Key copied'),()=>{t.select();toast('Press Ctrl+C to copy');});} else {t.select();toast('Press Ctrl+C to copy');} });
 
 // ---------------- toast ----------------
 let tt; function toast(m){const t=$('toast');t.textContent=m;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),2600);}
@@ -1163,6 +1421,7 @@ $('fsBtn').addEventListener('click',()=>{
 });
 document.addEventListener('fullscreenchange',()=>{ $('fsBtn').textContent=document.fullscreenElement?'Exit full screen':'Full screen'; setTimeout(fitConsole,60); });
 setSize(lsGet().size||'m');
+if(BUILTIN_KEY){ try{ setKey(JSON.stringify(Object.assign({},BUILTIN_KEY,{builtin:true}))); }catch(e){} }
 renderLog(); render(); requestAnimationFrame(tick); loadYT(); fitConsole();
 })();
 </script>
